@@ -495,7 +495,7 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
         />
         <Animated.View pointerEvents="box-none" style={containerStyle} onAccessibilityEscape={this.props.onRequestClose}>
           {this.props.showBackground !== false && (
-            <TouchableWithoutFeedback onPress={this.props.onRequestClose} accessibilityRole="button" accessible>
+            <TouchableWithoutFeedback onPress={this.props.onRequestClose} accessible={false} importantForAccessibility="no-hide-descendants">
               <Animated.View style={backgroundStyle} />
             </TouchableWithoutFeedback>
           )}
