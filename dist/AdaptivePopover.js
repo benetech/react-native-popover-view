@@ -39,7 +39,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     function verb(n) { return function (v) { return step([n, v]); }; }
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
-        while (_) try {
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
             if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
             if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
@@ -124,6 +124,11 @@ var AdaptivePopover = /** @class */ (function (_super) {
         return displayArea;
     };
     AdaptivePopover.prototype.componentDidMount = function () {
+        this.debug('[AdaptivePopover] componentDidMount', {
+            hasFromRect: !!this.props.fromRect,
+            hasFromRef: !!this.props.fromRef,
+            readyToAnimate: this.props.readyToAnimate
+        });
         this.handleResizeEventSubscription = Dimensions.addEventListener('change', this.handleResizeEvent);
         if (this.props.fromRect)
             this.setState({ fromRect: this.props.fromRect });
@@ -178,7 +183,7 @@ var AdaptivePopover = /** @class */ (function (_super) {
     };
     AdaptivePopover.prototype.debug = function (line, obj) {
         if (DEBUG || this.props.debug)
-            console.log("[" + (new Date()).toISOString() + "] " + line + (obj ? ": " + JSON.stringify(obj) : ''));
+            console.log("[".concat((new Date()).toISOString(), "] ").concat(line).concat(obj ? ": ".concat(JSON.stringify(obj)) : ''));
     };
     AdaptivePopover.prototype.setDefaultDisplayArea = function (newDisplayArea) {
         return __awaiter(this, void 0, void 0, function () {
@@ -194,6 +199,7 @@ var AdaptivePopover = /** @class */ (function (_super) {
                         if (!((!defaultDisplayArea || !newDisplayArea.equals(defaultDisplayArea)) &&
                             isValidDisplayArea)) return [3 /*break*/, 6];
                         this.debug('setDefaultDisplayArea - newDisplayArea', newDisplayArea);
+                        this.debug('setDefaultDisplayArea - previous defaultDisplayArea', defaultDisplayArea);
                         if (!!this.skipNextDefaultDisplayArea) return [3 /*break*/, 5];
                         return [4 /*yield*/, this.props.getDisplayAreaOffset()];
                     case 1:
@@ -225,7 +231,7 @@ var AdaptivePopover = /** @class */ (function (_super) {
     };
     // Custom type here, as KeyboardEvent type does not contain endCoordinates
     AdaptivePopover.prototype.keyboardDidShow = function (e) {
-        this.debug("keyboardDidShow - keyboard height: " + e.endCoordinates.height);
+        this.debug("keyboardDidShow - keyboard height: ".concat(e.endCoordinates.height));
         this.shiftForKeyboard(e.endCoordinates.height);
     };
     AdaptivePopover.prototype.keyboardDidHide = function () {
@@ -244,7 +250,7 @@ var AdaptivePopover = /** @class */ (function (_super) {
     AdaptivePopover.prototype.calculateRectFromRef = function () {
         var _a, _b, _c;
         return __awaiter(this, void 0, void 0, function () {
-            var fromRef, initialRect, displayAreaOffset, count, shouldAdjustForAndroidStatusBar, verticalOffsetAndroidAdjustment, verticalOffset, horizontalOffset, rect;
+            var fromRef, initialRect, displayAreaOffset, count, shouldAdjustForAndroidStatusBar, verticalOffsetAndroidAdjustment, verticalOffset, horizontalOffset, rect, hasStoredInitialRect, err_1;
             return __generator(this, function (_d) {
                 switch (_d.label) {
                     case 0:
@@ -275,32 +281,62 @@ var AdaptivePopover = /** @class */ (function (_super) {
                         horizontalOffset = -displayAreaOffset.x;
                         this.debug('calculateRectFromRef - waiting for ref to move from', initialRect);
                         count = 0;
+                        hasStoredInitialRect = initialRect.width > 0 && initialRect.height > 0;
                         _d.label = 4;
-                    case 4: return [4 /*yield*/, getRectForRef(fromRef)];
+                    case 4:
+                        /*
+                         * Defensive: the ref can be cleared between iterations if the source
+                         * component briefly unmounts/re-attaches. Bail out quietly instead of
+                         * letting getRectForRef reject with an unhandled promise.
+                         */
+                        if (!(fromRef === null || fromRef === void 0 ? void 0 : fromRef.current)) {
+                            this.debug('calculateRectFromRef - ref became null mid-poll, aborting');
+                            return [2 /*return*/];
+                        }
+                        _d.label = 5;
                     case 5:
+                        _d.trys.push([5, 7, , 8]);
+                        return [4 /*yield*/, getRectForRef(fromRef)];
+                    case 6:
                         rect = _d.sent();
+                        return [3 /*break*/, 8];
+                    case 7:
+                        err_1 = _d.sent();
+                        this.debug('calculateRectFromRef - getRectForRef rejected', String(err_1));
+                        return [2 /*return*/];
+                    case 8:
+                        this.debug('calculateRectFromRef - raw rect from measureInWindow', rect);
                         if ([rect.x, rect.y, rect.width, rect.height].every(function (i) { return i === undefined; })) {
                             this.debug('calculateRectFromRef - rect not found, all properties undefined');
                             return [2 /*return*/];
                         }
                         rect = new Rect(rect.x + horizontalOffset, rect.y + verticalOffset, rect.width, rect.height);
-                        if (count === 0 && AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect)) {
-                            return [3 /*break*/, 8];
+                        if (count === 0) {
+                            if (AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect)) {
+                                return [3 /*break*/, 11];
+                            }
+                            if (hasStoredInitialRect &&
+                                rect.equals(initialRect) &&
+                                rect.y >= -1000 &&
+                                rect.x >= -1000) {
+                                this.debug('calculateRectFromRef - measurement matches stored rect, ref is stable');
+                                return [3 /*break*/, 11];
+                            }
                         }
                         return [4 /*yield*/, new Promise(function (resolve) {
                                 setTimeout(resolve, 100);
                             })];
-                    case 6:
+                    case 9:
                         _d.sent();
                         // Timeout after 2 seconds
                         if (count++ > 20)
                             return [2 /*return*/];
-                        _d.label = 7;
-                    case 7:
+                        _d.label = 10;
+                    case 10:
                         if (!AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect)) return [3 /*break*/, 4];
-                        _d.label = 8;
-                    case 8:
-                        this.debug('calculateRectFromRef - calculated Rect', rect);
+                        _d.label = 11;
+                    case 11:
+                        this.debug('calculateRectFromRef - calculated Rect (final)', rect);
                         if (this._isMounted)
                             this.setState({ fromRect: rect });
                         return [2 /*return*/];
@@ -313,8 +349,14 @@ var AdaptivePopover = /** @class */ (function (_super) {
         var _a = this.props, onOpenStart = _a.onOpenStart, onCloseStart = _a.onCloseStart, onCloseComplete = _a.onCloseComplete, fromRef = _a.fromRef, otherProps = __rest(_a, ["onOpenStart", "onCloseStart", "onCloseComplete", "fromRef"]);
         var _b = this.state, fromRect = _b.fromRect, showing = _b.showing;
         // Don't render popover until we have an initial fromRect calculated for the view
-        if (fromRef && !fromRect && !showing)
+        if (fromRef && !fromRect && !showing) {
+            this.debug('[AdaptivePopover] render - returning null (waiting for fromRect)');
             return null;
+        }
+        this.debug('[AdaptivePopover] render - rendering BasePopover', {
+            hasFromRect: !!fromRect,
+            readyToAnimate: this.props.readyToAnimate
+        });
         return (React.createElement(BasePopover, __assign({}, otherProps, { displayArea: this.getDisplayArea(), fromRect: fromRect, onOpenStart: function () {
                 onOpenStart === null || onOpenStart === void 0 ? void 0 : onOpenStart();
                 _this.debug('Setting up keyboard listeners');

@@ -8,12 +8,13 @@ interface AdaptivePopoverState {
     displayAreaOffset: Point | null;
     showing: boolean;
 }
-declare type AdaptivePopoverProps = PopoverProps & {
+type AdaptivePopoverProps = PopoverProps & {
     fromRect?: Rect;
     fromRef?: RefObject<View>;
     displayArea?: Rect;
     getDisplayAreaOffset: () => Promise<Point>;
     showBackground?: boolean;
+    readyToAnimate?: boolean;
 };
 export default class AdaptivePopover extends Component<AdaptivePopoverProps, AdaptivePopoverState> {
     state: {

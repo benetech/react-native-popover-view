@@ -104,8 +104,7 @@ var Popover = /** @class */ (function (_super) {
         if (sourceElement) {
             sourceElement = React.cloneElement(sourceElement, { ref: this.sourceRef });
         }
-        var modalProps = __assign(__assign({}, otherProps), { fromRect: fromRect,
-            fromRef: fromRef, isVisible: actualIsVisible, arrowSize: arrowSize ? new Size(arrowSize === null || arrowSize === void 0 ? void 0 : arrowSize.width, arrowSize === null || arrowSize === void 0 ? void 0 : arrowSize.height) : undefined, displayArea: displayArea
+        var modalProps = __assign(__assign({}, otherProps), { fromRect: fromRect, fromRef: fromRef, isVisible: actualIsVisible, arrowSize: arrowSize ? new Size(arrowSize === null || arrowSize === void 0 ? void 0 : arrowSize.width, arrowSize === null || arrowSize === void 0 ? void 0 : arrowSize.height) : undefined, displayArea: displayArea
                 ? new Rect(displayArea.x, displayArea.y, displayArea.width, displayArea.height)
                 : undefined, onRequestClose: function () {
                 if (onRequestClose)

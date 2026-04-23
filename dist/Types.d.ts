@@ -14,7 +14,7 @@ export declare enum Mode {
     RN_MODAL = "rn-modal",
     TOOLTIP = "tooltip"
 }
-export declare type Insets = {
+export type Insets = {
     left?: number;
     right?: number;
     bottom?: number;
@@ -22,8 +22,9 @@ export declare type Insets = {
 };
 export interface ModalPopoverState {
     visible: boolean;
+    modalShown?: boolean;
 }
-export declare type PopoverProps = {
+export type PopoverProps = {
     children?: ReactNode;
     isVisible?: boolean;
     placement?: Placement | Array<Placement>;

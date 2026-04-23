@@ -1,12 +1,12 @@
 import { StyleProp, ViewStyle } from 'react-native';
 import { Rect, Size, Point, Placement, PopoverProps } from './Types';
-declare type ComputeGeometryBaseProps = {
+type ComputeGeometryBaseProps = {
     requestedContentSize: Size;
     displayArea: Rect;
     debug: (line: string, obj?: unknown) => void;
     offset?: number;
 };
-declare type ComputeGeometryProps = ComputeGeometryBaseProps & {
+type ComputeGeometryProps = ComputeGeometryBaseProps & {
     placement?: Placement | Array<Placement>;
     previousPlacement?: Placement;
     fromRect: Rect | null;

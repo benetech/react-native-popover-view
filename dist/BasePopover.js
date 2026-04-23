@@ -61,26 +61,48 @@ var BasePopover = /** @class */ (function (_super) {
         _this._isMounted = false;
         _this.animating = false;
         _this.animateOutAfterShow = false;
+        _this.hasRunHandleChange = false;
         _this.popoverRef = React.createRef();
         _this.arrowRef = React.createRef();
+        _this.renderCount = 0;
         return _this;
     }
     BasePopover.prototype.debug = function (line, obj) {
         if (DEBUG || this.props.debug)
-            console.log("[" + (new Date()).toISOString() + "] " + line + (obj ? ": " + JSON.stringify(obj) : ''));
+            console.log("[".concat((new Date()).toISOString(), "] ").concat(line).concat(obj ? ": ".concat(JSON.stringify(obj)) : ''));
     };
     BasePopover.prototype.componentDidMount = function () {
         this._isMounted = true;
+        this.debug('[BasePopover] componentDidMount', { readyToAnimate: this.props.readyToAnimate });
     };
     BasePopover.prototype.componentDidUpdate = function (prevProps) {
+        /*
+         * If the host Modal just finished opening, re-run handleChange so the
+         * deferred animateIn now fires against the already-visible Modal window.
+         */
+        if (this.props.readyToAnimate &&
+            !prevProps.readyToAnimate &&
+            this.state.nextGeom &&
+            !this.state.activeGeom) {
+            this.debug('componentDidUpdate - readyToAnimate flipped true, resuming animateIn');
+            this.handleChange();
+        }
         // Make sure a value we care about has actually changed
         var importantProps = ['isVisible', 'fromRect', 'displayArea', 'offset', 'placement'];
         var changedProps = getChangedProps(this.props, prevProps, importantProps);
         if (!changedProps.length)
             return;
         this.debug('[BasePopover] componentDidUpdate - changedProps', changedProps);
+        if (changedProps.includes('displayArea')) {
+            this.debug('[BasePopover] componentDidUpdate - displayArea before', prevProps.displayArea);
+            this.debug('[BasePopover] componentDidUpdate - displayArea after', this.props.displayArea);
+        }
+        if (changedProps.includes('fromRect')) {
+            this.debug('[BasePopover] componentDidUpdate - fromRect before', prevProps.fromRect);
+            this.debug('[BasePopover] componentDidUpdate - fromRect after', this.props.fromRect);
+        }
         if (this.props.isVisible !== prevProps.isVisible) {
-            this.debug("componentDidUpdate - isVisible changed, now " + this.props.isVisible);
+            this.debug("componentDidUpdate - isVisible changed, now ".concat(this.props.isVisible));
             if (!this.props.isVisible) {
                 if (this.state.showing)
                     this.animateOut();
@@ -117,7 +139,7 @@ var BasePopover = /** @class */ (function (_super) {
         }
         if (!this.state.requestedContentSize ||
             !requestedContentSize.equals(this.state.requestedContentSize)) {
-            this.debug("measureContent - new requestedContentSize: " + JSON.stringify(requestedContentSize) + " (used to be " + JSON.stringify(this.state.requestedContentSize) + ")");
+            this.debug("measureContent - new requestedContentSize: ".concat(JSON.stringify(requestedContentSize), " (used to be ").concat(JSON.stringify(this.state.requestedContentSize), ")"));
             this.setState({ requestedContentSize: requestedContentSize }, function () { return _this.handleChange(); });
         }
         else {
@@ -141,9 +163,19 @@ var BasePopover = /** @class */ (function (_super) {
             this.debug('handleChange - no requestedContentSize, exiting...');
             return;
         }
-        this.debug('handleChange - waiting 100ms to accumulate all changes');
+        /*
+         * Debounce subsequent handleChange calls by 100ms so multiple rapid
+         * geometry updates (keyboard, rotation, sub-pixel relayouts) collapse
+         * into a single recompute. On the very first handleChange of an open,
+         * there is nothing to accumulate — skip the delay to shave ~100ms off
+         * the perceived open time. Duplicate calls that arrive during the same
+         * open cycle are now a no-op thanks to the geometry-matches check below.
+         */
+        var delay = this.hasRunHandleChange ? 100 : 0;
+        this.hasRunHandleChange = true;
+        this.debug("handleChange - scheduling in ".concat(delay, "ms to accumulate changes"));
         this.handleChangeTimeout = setTimeout(function () {
-            var _a = _this.state, activeGeom = _a.activeGeom, animatedValues = _a.animatedValues, requestedContentSize = _a.requestedContentSize;
+            var _a = _this.state, activeGeom = _a.activeGeom, prevNextGeom = _a.nextGeom, animatedValues = _a.animatedValues, requestedContentSize = _a.requestedContentSize;
             var _b = _this.props, arrowSize = _b.arrowSize, popoverStyle = _b.popoverStyle, fromRect = _b.fromRect, displayArea = _b.displayArea, placement = _b.placement, onOpenStart = _b.onOpenStart, arrowShift = _b.arrowShift, onPositionChange = _b.onPositionChange, offset = _b.offset, popoverShift = _b.popoverShift;
             if (requestedContentSize) {
                 _this.debug('handleChange - requestedContentSize', requestedContentSize);
@@ -172,14 +204,38 @@ var BasePopover = /** @class */ (function (_super) {
                          * the display area to get final calculations for popoverOrigin before show
                          */
                         _this.debug('handleChange - delaying showing popover because viewLargerThanDisplayArea');
+                        return;
                     }
-                    else if (!activeGeom) {
+                    /*
+                     * If an animation is already running or has settled, treat that as
+                     * "already handling this geometry." Compare the new geom to the one
+                     * we're animating toward (activeGeom once settled, prevNextGeom while
+                     * still in flight). If they match, skip — re-running animateIn here
+                     * would call values.translate.setValue(...) and cancel the in-flight
+                     * Animated.parallel (stopTogether), producing a visible jump.
+                     */
+                    var inFlightTargetGeom = activeGeom || (_this.animating ? prevNextGeom : undefined);
+                    if (inFlightTargetGeom && Geometry.equals(inFlightTargetGeom, geom_1)) {
+                        _this.debug('handleChange - geometry matches in-flight/settled animation, no-op');
+                        return;
+                    }
+                    if (!inFlightTargetGeom) {
+                        if (_this.props.readyToAnimate === false) {
+                            /*
+                             * Geometry is ready but the host Modal hasn't finished opening yet.
+                             * Defer animateIn to avoid animating over the Modal's own open animation,
+                             * which causes a jittery flicker on Android. componentDidUpdate will
+                             * re-run handleChange when readyToAnimate flips true.
+                             */
+                            _this.debug('handleChange - waiting for readyToAnimate before animating in');
+                            return;
+                        }
                         _this.debug('handleChange - animating in');
                         if (onOpenStart)
                             setTimeout(onOpenStart);
                         _this.animateIn();
                     }
-                    else if (activeGeom && !Geometry.equals(activeGeom, geom_1)) {
+                    else {
                         var moveTo = new Point(geom_1.popoverOrigin.x, geom_1.popoverOrigin.y);
                         _this.debug('handleChange - Triggering popover move to', moveTo);
                         _this.animateTo({
@@ -191,9 +247,6 @@ var BasePopover = /** @class */ (function (_super) {
                             geom: geom_1,
                             callback: onPositionChange
                         });
-                    }
-                    else {
-                        _this.debug('handleChange - no change');
                     }
                 });
             }
@@ -269,8 +322,10 @@ var BasePopover = /** @class */ (function (_super) {
             translateStart.y += FIX_SHIFT; // Temp fix for useNativeDriver issue
             values.translate.setValue(translateStart);
             var translatePoint = new Point(nextGeom.popoverOrigin.x, nextGeom.popoverOrigin.y);
-            this.debug('animateIn - translateStart', translateStart);
-            this.debug('animateIn - translatePoint', translatePoint);
+            this.debug('animateIn - translateStart (with FIX_SHIFT)', translateStart);
+            this.debug('animateIn - translatePoint (before FIX_SHIFT added in animateTo)', translatePoint);
+            this.debug('animateIn - popoverOrigin from geom', nextGeom.popoverOrigin);
+            this.debug('animateIn - requestedContentSize', this.state.requestedContentSize);
             this.animateTo({
                 values: values,
                 fade: 1,
@@ -325,11 +380,13 @@ var BasePopover = /** @class */ (function (_super) {
             return;
         }
         this.animating = true;
+        this.debug('animateTo - starting Animated.parallel', { fade: fade, scale: scale, translatePoint: translatePoint });
         Animated.parallel([
             Animated.timing(values.fade, __assign(__assign({}, commonConfig), { toValue: fade })),
             Animated.timing(values.translate, __assign(__assign({}, commonConfig), { toValue: translatePoint })),
             Animated.timing(values.scale, __assign(__assign({}, commonConfig), { toValue: scale }))
         ]).start(function () {
+            _this.debug('animateTo - animation complete');
             _this.animating = false;
             if (_this._isMounted)
                 _this.setState({ activeGeom: _this.state.nextGeom });
@@ -412,6 +469,7 @@ var BasePopover = /** @class */ (function (_super) {
                     React.createElement(Animated.View, { style: transformStyle },
                         React.createElement(View, { ref: this.popoverRef, style: contentWrapperStyle, onLayout: function (evt) {
                                 var layout = __assign({}, evt.nativeEvent.layout);
+                                _this.debug('[BasePopover] content onLayout', layout);
                                 setTimeout(function () { return _this._isMounted &&
                                     _this.measureContent(new Size(layout.width, layout.height)); }, 10);
                             } }, this.props.children),

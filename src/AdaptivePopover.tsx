@@ -19,6 +19,7 @@ type AdaptivePopoverProps = PopoverProps & {
   displayArea?: Rect;
   getDisplayAreaOffset: () => Promise<Point>;
   showBackground?: boolean;
+  readyToAnimate?: boolean;
 }
 
 export default class AdaptivePopover extends Component<AdaptivePopoverProps, AdaptivePopoverState> {
@@ -77,6 +78,11 @@ export default class AdaptivePopover extends Component<AdaptivePopoverProps, Ada
   }
 
   componentDidMount(): void {
+    this.debug('[AdaptivePopover] componentDidMount', {
+      hasFromRect: !!this.props.fromRect,
+      hasFromRef: !!this.props.fromRef,
+      readyToAnimate: this.props.readyToAnimate
+    });
     this.handleResizeEventSubscription = Dimensions.addEventListener('change', this.handleResizeEvent);
     if (this.props.fromRect) this.setState({ fromRect: this.props.fromRect });
     else if (this.props.fromRef) this.calculateRectFromRef();
@@ -156,6 +162,7 @@ export default class AdaptivePopover extends Component<AdaptivePopoverProps, Ada
       isValidDisplayArea
     ) {
       this.debug('setDefaultDisplayArea - newDisplayArea', newDisplayArea);
+      this.debug('setDefaultDisplayArea - previous defaultDisplayArea', defaultDisplayArea);
       if (!this.skipNextDefaultDisplayArea) {
         const displayAreaOffset = await this.props.getDisplayAreaOffset();
         this.debug('setDefaultDisplayArea - displayAreaOffset', displayAreaOffset);
@@ -235,16 +242,51 @@ export default class AdaptivePopover extends Component<AdaptivePopoverProps, Ada
     this.debug('calculateRectFromRef - waiting for ref to move from', initialRect);
     let rect: Rect;
     count = 0;
+    /*
+     * If we already hold a stored measurement from a previous call, accepting a
+     * matching measurement on the first iteration means the ref is stable at
+     * the known position and there is nothing to wait for. Without this, the
+     * loop waits indefinitely for the ref to "move" even when it never will
+     * (e.g., when setDefaultDisplayArea triggers a re-run after displayArea
+     * settles), producing the endless measureInWindow polling we saw in logs.
+     */
+    const hasStoredInitialRect = initialRect.width > 0 && initialRect.height > 0;
     do {
-      rect = await getRectForRef(fromRef);
+      /*
+       * Defensive: the ref can be cleared between iterations if the source
+       * component briefly unmounts/re-attaches. Bail out quietly instead of
+       * letting getRectForRef reject with an unhandled promise.
+       */
+      if (!fromRef?.current) {
+        this.debug('calculateRectFromRef - ref became null mid-poll, aborting');
+        return;
+      }
+      try {
+        rect = await getRectForRef(fromRef);
+      } catch (err) {
+        this.debug('calculateRectFromRef - getRectForRef rejected', String(err));
+        return;
+      }
+      this.debug('calculateRectFromRef - raw rect from measureInWindow', rect);
       if ([rect.x, rect.y, rect.width, rect.height].every(i => i === undefined)) {
         this.debug('calculateRectFromRef - rect not found, all properties undefined');
         return;
       }
       rect = new Rect(rect.x + horizontalOffset, rect.y + verticalOffset, rect.width, rect.height);
 
-      if (count === 0 && AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect)) {
-        break;
+      if (count === 0) {
+        if (AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect)) {
+          break;
+        }
+        if (
+          hasStoredInitialRect &&
+          rect.equals(initialRect) &&
+          rect.y >= -1000 &&
+          rect.x >= -1000
+        ) {
+          this.debug('calculateRectFromRef - measurement matches stored rect, ref is stable');
+          break;
+        }
       }
 
       await new Promise(resolve => {
@@ -255,7 +297,7 @@ export default class AdaptivePopover extends Component<AdaptivePopoverProps, Ada
 
     } while (!AdaptivePopover.hasRetrievedSatisfyingRect(rect, initialRect));
 
-    this.debug('calculateRectFromRef - calculated Rect', rect);
+    this.debug('calculateRectFromRef - calculated Rect (final)', rect);
     if (this._isMounted) this.setState({ fromRect: rect });
   }
 
@@ -271,7 +313,15 @@ export default class AdaptivePopover extends Component<AdaptivePopoverProps, Ada
     const { fromRect, showing } = this.state;
 
     // Don't render popover until we have an initial fromRect calculated for the view
-    if (fromRef && !fromRect && !showing) return null;
+    if (fromRef && !fromRect && !showing) {
+      this.debug('[AdaptivePopover] render - returning null (waiting for fromRect)');
+      return null;
+    }
+
+    this.debug('[AdaptivePopover] render - rendering BasePopover', {
+      hasFromRect: !!fromRect,
+      readyToAnimate: this.props.readyToAnimate
+    });
 
     return (
       <BasePopover
