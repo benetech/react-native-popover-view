@@ -1,5 +1,8 @@
 import React, { Component, ReactNode } from 'react';
-import { Animated, Easing, EasingFunction, I18nManager, LayoutChangeEvent, StyleSheet, TouchableWithoutFeedback, View, ViewStyle } from 'react-native';
+import {
+    Animated, Easing, EasingFunction, I18nManager, LayoutChangeEvent,
+    Platform, StyleSheet, TouchableWithoutFeedback, View, ViewStyle
+} from 'react-native';
 import Arrow, { ArrowProps } from './Arrow';
 import { DEBUG, DEFAULT_ARROW_SIZE, FIX_SHIFT, isWeb, styles } from './Constants';
 import { computeGeometry, Geometry } from './Geometry';
@@ -367,6 +370,17 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       return;
     }
     this.animating = true;
+
+    /**
+     * Android fix:
+     * Running translate and scale animations together with the nativeDriver
+     * sometimes causes a small jitter near the end when opening the modal.
+     * To prevent it, we skip the translate animation on Android during opening
+     * by using a 1ms duration instead of the normal one.
+     */
+    const isOpening = fade === 1;
+    const translateDuration = Platform.OS === 'android' && isOpening ? 1 : commonConfig.duration;
+
     Animated.parallel([
       Animated.timing(values.fade, {
         ...commonConfig,
@@ -374,7 +388,8 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       }),
       Animated.timing(values.translate, {
         ...commonConfig,
-        toValue: translatePoint
+        toValue: translatePoint,
+        duration: translateDuration,
       }),
       Animated.timing(values.scale, {
         ...commonConfig,
