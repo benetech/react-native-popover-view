@@ -1,7 +1,7 @@
 import { RefObject } from 'react';
 import { MeasureInWindowOnSuccessCallback, StyleProp, ViewStyle } from 'react-native';
 import { Placement, Point, Rect, Size } from './Types';
-declare type RefType = RefObject<{
+type RefType = RefObject<{
     measureInWindow: (callback: MeasureInWindowOnSuccessCallback) => void;
 }>;
 export declare function getRectForRef(ref: RefType): Promise<Rect>;

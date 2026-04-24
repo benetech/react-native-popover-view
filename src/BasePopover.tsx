@@ -12,6 +12,7 @@ type BasePopoverProps = Omit<PopoverProps, 'displayAreaInsets'> & {
   fromRect: Rect | null;
   onDisplayAreaChanged: (rect: Rect) => void;
   skipMeasureContent: () => boolean;
+  readyToAnimate?: boolean;
 }
 
 interface BasePopoverState {
@@ -45,6 +46,7 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
   private _isMounted = false;
   private animating = false;
   private animateOutAfterShow = false;
+  private hasRunHandleChange = false;
 
   private popoverRef = React.createRef<View>();
   private arrowRef = React.createRef<View>();
@@ -56,16 +58,41 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       console.log(`[${(new Date()).toISOString()}] ${line}${obj ? `: ${JSON.stringify(obj)}` : ''}`);
   }
 
+  private renderCount = 0;
+
   componentDidMount(): void {
     this._isMounted = true;
+    this.debug('[BasePopover] componentDidMount', { readyToAnimate: this.props.readyToAnimate });
   }
 
   componentDidUpdate(prevProps: BasePopoverProps): void {
+    /*
+     * If the host Modal just finished opening, re-run handleChange so the
+     * deferred animateIn now fires against the already-visible Modal window.
+     */
+    if (
+      this.props.readyToAnimate &&
+      !prevProps.readyToAnimate &&
+      this.state.nextGeom &&
+      !this.state.activeGeom
+    ) {
+      this.debug('componentDidUpdate - readyToAnimate flipped true, resuming animateIn');
+      this.handleChange();
+    }
+
     // Make sure a value we care about has actually changed
     const importantProps = ['isVisible', 'fromRect', 'displayArea', 'offset', 'placement'];
     const changedProps = getChangedProps(this.props, prevProps, importantProps);
     if (!changedProps.length) return;
     this.debug('[BasePopover] componentDidUpdate - changedProps', changedProps);
+    if (changedProps.includes('displayArea')) {
+      this.debug('[BasePopover] componentDidUpdate - displayArea before', prevProps.displayArea);
+      this.debug('[BasePopover] componentDidUpdate - displayArea after', this.props.displayArea);
+    }
+    if (changedProps.includes('fromRect')) {
+      this.debug('[BasePopover] componentDidUpdate - fromRect before', prevProps.fromRect);
+      this.debug('[BasePopover] componentDidUpdate - fromRect after', this.props.fromRect);
+    }
 
     if (this.props.isVisible !== prevProps.isVisible) {
       this.debug(`componentDidUpdate - isVisible changed, now ${this.props.isVisible}`);
@@ -131,10 +158,21 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       return;
     }
 
-    this.debug('handleChange - waiting 100ms to accumulate all changes');
+    /*
+     * Debounce subsequent handleChange calls by 100ms so multiple rapid
+     * geometry updates (keyboard, rotation, sub-pixel relayouts) collapse
+     * into a single recompute. On the very first handleChange of an open,
+     * there is nothing to accumulate — skip the delay to shave ~100ms off
+     * the perceived open time. Duplicate calls that arrive during the same
+     * open cycle are now a no-op thanks to the geometry-matches check below.
+     */
+    const delay = this.hasRunHandleChange ? 100 : 0;
+    this.hasRunHandleChange = true;
+    this.debug(`handleChange - scheduling in ${delay}ms to accumulate changes`);
     this.handleChangeTimeout = setTimeout(() => {
       const {
         activeGeom,
+        nextGeom: prevNextGeom,
         animatedValues,
         requestedContentSize
       }: Partial<BasePopoverState> = this.state;
@@ -180,11 +218,38 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
              * the display area to get final calculations for popoverOrigin before show
              */
             this.debug('handleChange - delaying showing popover because viewLargerThanDisplayArea');
-          } else if (!activeGeom) {
+            return;
+          }
+
+          /*
+           * If an animation is already running or has settled, treat that as
+           * "already handling this geometry." Compare the new geom to the one
+           * we're animating toward (activeGeom once settled, prevNextGeom while
+           * still in flight). If they match, skip — re-running animateIn here
+           * would call values.translate.setValue(...) and cancel the in-flight
+           * Animated.parallel (stopTogether), producing a visible jump.
+           */
+          const inFlightTargetGeom = activeGeom || (this.animating ? prevNextGeom : undefined);
+          if (inFlightTargetGeom && Geometry.equals(inFlightTargetGeom, geom)) {
+            this.debug('handleChange - geometry matches in-flight/settled animation, no-op');
+            return;
+          }
+
+          if (!inFlightTargetGeom) {
+            if (this.props.readyToAnimate === false) {
+              /*
+               * Geometry is ready but the host Modal hasn't finished opening yet.
+               * Defer animateIn to avoid animating over the Modal's own open animation,
+               * which causes a jittery flicker on Android. componentDidUpdate will
+               * re-run handleChange when readyToAnimate flips true.
+               */
+              this.debug('handleChange - waiting for readyToAnimate before animating in');
+              return;
+            }
             this.debug('handleChange - animating in');
             if (onOpenStart) setTimeout(onOpenStart);
             this.animateIn();
-          } else if (activeGeom && !Geometry.equals(activeGeom, geom)) {
+          } else {
             const moveTo = new Point(geom.popoverOrigin.x, geom.popoverOrigin.y);
             this.debug('handleChange - Triggering popover move to', moveTo);
             this.animateTo({
@@ -196,8 +261,6 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
               geom,
               callback: onPositionChange
             });
-          } else {
-            this.debug('handleChange - no change');
           }
         });
       }
@@ -288,8 +351,10 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       values.translate.setValue(translateStart);
       const translatePoint = new Point(nextGeom.popoverOrigin.x, nextGeom.popoverOrigin.y);
 
-      this.debug('animateIn - translateStart', translateStart);
-      this.debug('animateIn - translatePoint', translatePoint);
+      this.debug('animateIn - translateStart (with FIX_SHIFT)', translateStart);
+      this.debug('animateIn - translatePoint (before FIX_SHIFT added in animateTo)', translatePoint);
+      this.debug('animateIn - popoverOrigin from geom', nextGeom.popoverOrigin);
+      this.debug('animateIn - requestedContentSize', this.state.requestedContentSize);
       this.animateTo({
         values,
         fade: 1,
@@ -367,6 +432,7 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
       return;
     }
     this.animating = true;
+    this.debug('animateTo - starting Animated.parallel', { fade, scale, translatePoint });
     Animated.parallel([
       Animated.timing(values.fade, {
         ...commonConfig,
@@ -381,6 +447,7 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
         toValue: scale
       })
     ]).start(() => {
+      this.debug('animateTo - animation complete');
       this.animating = false;
       if (this._isMounted) this.setState({ activeGeom: this.state.nextGeom });
       if (callback) callback();
@@ -507,6 +574,7 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
                 style={contentWrapperStyle}
                 onLayout={(evt: LayoutChangeEvent) => {
                   const layout = { ...evt.nativeEvent.layout };
+                  this.debug('[BasePopover] content onLayout', layout);
                   setTimeout(
                     () => this._isMounted &&
                       this.measureContent(new Size(layout.width, layout.height)),

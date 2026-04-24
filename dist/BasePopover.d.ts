@@ -2,12 +2,13 @@ import { Component, ReactNode } from 'react';
 import { Animated, EasingFunction } from 'react-native';
 import { Geometry } from './Geometry';
 import { Point, PopoverProps, Rect, Size } from './Types';
-declare type BasePopoverProps = Omit<PopoverProps, 'displayAreaInsets'> & {
+type BasePopoverProps = Omit<PopoverProps, 'displayAreaInsets'> & {
     displayArea: Rect;
     showBackground?: boolean;
     fromRect: Rect | null;
     onDisplayAreaChanged: (rect: Rect) => void;
     skipMeasureContent: () => boolean;
+    readyToAnimate?: boolean;
 };
 interface BasePopoverState {
     requestedContentSize: Size | null;
@@ -26,10 +27,12 @@ export default class BasePopover extends Component<BasePopoverProps, BasePopover
     private _isMounted;
     private animating;
     private animateOutAfterShow;
+    private hasRunHandleChange;
     private popoverRef;
     private arrowRef;
     private handleChangeTimeout?;
     debug(line: string, obj?: unknown): void;
+    private renderCount;
     componentDidMount(): void;
     componentDidUpdate(prevProps: BasePopoverProps): void;
     componentWillUnmount(): void;

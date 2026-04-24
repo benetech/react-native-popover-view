@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, ViewStyle } from 'react-native';
 import { Placement, Size } from './Types';
-export declare type ArrowProps = {
+export type ArrowProps = {
     placement: Placement;
     color: ViewStyle['backgroundColor'];
     arrowSize: Size;

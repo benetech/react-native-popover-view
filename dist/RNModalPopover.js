@@ -27,18 +27,24 @@ var __assign = (this && this.__assign) || function () {
 import React, { Component } from 'react';
 import { Modal } from 'react-native';
 import AdaptivePopover from './AdaptivePopover';
-import { DEFAULT_STATUS_BAR_TRANSLUCENT, MULTIPLE_POPOVER_WARNING } from './Constants';
+import { DEBUG, DEFAULT_STATUS_BAR_TRANSLUCENT, MULTIPLE_POPOVER_WARNING } from './Constants';
 import { Point } from './Types';
 var RNModalPopover = /** @class */ (function (_super) {
     __extends(RNModalPopover, _super);
     function RNModalPopover() {
         var _this = _super !== null && _super.apply(this, arguments) || this;
         _this.state = {
-            visible: false
+            visible: false,
+            modalShown: false
         };
         return _this;
     }
+    RNModalPopover.prototype.debug = function (line, obj) {
+        if (DEBUG || this.props.debug)
+            console.log("[".concat((new Date()).toISOString(), "] [RNModalPopover] ").concat(line).concat(obj !== undefined ? ": ".concat(JSON.stringify(obj)) : ''));
+    };
     RNModalPopover.prototype.componentDidMount = function () {
+        this.debug('componentDidMount - isVisible', this.props.isVisible);
         if (this.props.isVisible) {
             if (RNModalPopover.isShowingInModal)
                 console.warn(MULTIPLE_POPOVER_WARNING);
@@ -47,6 +53,15 @@ var RNModalPopover = /** @class */ (function (_super) {
         }
     };
     RNModalPopover.prototype.componentDidUpdate = function (prevProps, prevState) {
+        if (this.props.isVisible !== prevProps.isVisible) {
+            this.debug('componentDidUpdate - isVisible changed', { from: prevProps.isVisible, to: this.props.isVisible });
+        }
+        if (this.state.visible !== prevState.visible) {
+            this.debug('componentDidUpdate - state.visible changed', { from: prevState.visible, to: this.state.visible });
+        }
+        if (this.state.modalShown !== prevState.modalShown) {
+            this.debug('componentDidUpdate - state.modalShown changed', { from: prevState.modalShown, to: this.state.modalShown });
+        }
         if (this.props.isVisible && !prevProps.isVisible) {
             if (RNModalPopover.isShowingInModal)
                 console.warn(MULTIPLE_POPOVER_WARNING);
@@ -67,15 +82,17 @@ var RNModalPopover = /** @class */ (function (_super) {
         var _a = this.props, statusBarTranslucent = _a.statusBarTranslucent, onCloseStart = _a.onCloseStart, onRequestClose = _a.onRequestClose;
         var visible = this.state.visible;
         return (React.createElement(Modal, { transparent: true, supportedOrientations: ['portrait', 'portrait-upside-down', 'landscape'], hardwareAccelerated: true, visible: visible, statusBarTranslucent: statusBarTranslucent !== null && statusBarTranslucent !== void 0 ? statusBarTranslucent : DEFAULT_STATUS_BAR_TRANSLUCENT, onShow: function () {
+                _this.debug('Modal.onShow fired');
                 RNModalPopover.isShowingInModal = true;
+                _this.setState({ modalShown: true });
             }, 
             // Handles android back button
             onRequestClose: onRequestClose },
-            React.createElement(AdaptivePopover, __assign({}, this.props, { onCloseStart: function () {
+            React.createElement(AdaptivePopover, __assign({}, this.props, { readyToAnimate: this.state.modalShown, onCloseStart: function () {
                     RNModalPopover.isShowingInModal = false;
                     if (onCloseStart)
                         onCloseStart();
-                }, onCloseComplete: function () { return _this.setState({ visible: false }); }, getDisplayAreaOffset: function () { return Promise.resolve(new Point(0, 0)); } }))));
+                }, onCloseComplete: function () { return _this.setState({ visible: false, modalShown: false }); }, getDisplayAreaOffset: function () { return Promise.resolve(new Point(0, 0)); } }))));
     };
     RNModalPopover.isShowingInModal = false;
     return RNModalPopover;

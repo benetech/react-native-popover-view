@@ -29,6 +29,7 @@ export type Insets = {
 
 export interface ModalPopoverState {
   visible: boolean;
+  modalShown?: boolean;
 }
 
 export type PopoverProps = {

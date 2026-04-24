@@ -15,7 +15,9 @@ interface PublicPopoverState {
 export default class Popover extends Component<PublicPopoverProps, PublicPopoverState> {
     static propTypes: {
         isVisible: PropTypes.Requireable<boolean>;
-        from: PropTypes.Requireable<string | number | boolean | {} | PropTypes.ReactElementLike | PropTypes.ReactNodeArray>;
+        from: PropTypes.Requireable<NonNullable<Rect | ((...args: any[]) => any) | PropTypes.ReactNodeLike | PropTypes.InferProps<{
+            current: PropTypes.Requireable<any>;
+        }>>>;
         displayArea: PropTypes.Requireable<Required<PropTypes.InferProps<{
             x: PropTypes.Requireable<number>;
             y: PropTypes.Requireable<number>;
@@ -28,7 +30,7 @@ export default class Popover extends Component<PublicPopoverProps, PublicPopover
             top: PropTypes.Requireable<number>;
             bottom: PropTypes.Requireable<number>;
         }>>;
-        placement: PropTypes.Requireable<Placement | (Placement | null | undefined)[]>;
+        placement: PropTypes.Requireable<NonNullable<Placement | (Placement | null | undefined)[] | null | undefined>>;
         animationConfig: PropTypes.Requireable<object>;
         popoverStyle: any;
         popoverShift: PropTypes.Requireable<PropTypes.InferProps<{
